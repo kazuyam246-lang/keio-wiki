@@ -7,13 +7,21 @@ import {
   useEffect,
   useState,
 } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import {
+  useRouter,
+  useSearchParams,
+} from "next/navigation";
 import { supabase } from "../../lib/supabase";
 
 type Course = {
   id: number;
   name: string;
+  canonical_name: string | null;
   professor: string;
+  faculty: string | null;
+  campus: string | null;
+  semester: string | null;
+  level: string | null;
 };
 
 export default function ReviewPage() {
@@ -48,6 +56,20 @@ function ReviewForm() {
   const [professor, setProfessor] =
     useState("");
 
+  const [courseSearch, setCourseSearch] =
+    useState("");
+
+  const [courseResults, setCourseResults] =
+    useState<Course[]>([]);
+
+  const [
+    searchingCourses,
+    setSearchingCourses,
+  ] = useState(false);
+
+  const [showResults, setShowResults] =
+    useState(false);
+
   const [rating, setRating] =
     useState("");
 
@@ -63,9 +85,6 @@ function ReviewForm() {
   const [comment, setComment] =
     useState("");
 
-  const [courses, setCourses] =
-    useState<Course[]>([]);
-
   const [message, setMessage] =
     useState("");
 
@@ -77,12 +96,12 @@ function ReviewForm() {
   const [user, setUser] =
     useState<any>(null);
 
-  const [
-    loadingUser,
-    setLoadingUser,
-  ] = useState(true);
+  const [loadingUser, setLoadingUser] =
+    useState(true);
 
-  // ログイン状態を確認
+  /*
+   * ログイン状態を確認
+   */
   useEffect(() => {
     async function checkUser() {
       const {
@@ -96,59 +115,219 @@ function ReviewForm() {
     checkUser();
   }, []);
 
-  // 授業一覧を取得
+  /*
+   * 授業詳細ページから来た場合
+   *
+   * /review?courseId=123
+   *
+   * のようなURLなら、
+   * 25,000件を取得せず、
+   * 指定された授業1件だけ取得する。
+   */
   useEffect(() => {
-    async function loadCourses() {
+    async function loadInitialCourse() {
+      if (!initialCourseId) {
+        return;
+      }
+
       const { data, error } =
         await supabase
           .from("courses")
           .select(
-            "id, name, professor"
+            `
+            id,
+            name,
+            canonical_name,
+            professor,
+            faculty,
+            campus,
+            semester,
+            level
+            `
           )
-          .order("id", {
-            ascending: true,
-          });
+          .eq(
+            "id",
+            Number(initialCourseId)
+          )
+          .single();
 
       if (error) {
         console.error(error);
         return;
       }
 
-      const loadedCourses =
-        data ?? [];
-
-      setCourses(loadedCourses);
-
-      // 授業詳細から来た場合は自動選択
-      if (initialCourseId) {
-        const selectedCourse =
-          loadedCourses.find(
-            (course) =>
-              String(course.id) ===
-              initialCourseId
-          );
-
-        if (selectedCourse) {
-          setCourseId(
-            String(
-              selectedCourse.id
-            )
-          );
-
-          setCourseName(
-            selectedCourse.name
-          );
-
-          setProfessor(
-            selectedCourse.professor
-          );
-        }
+      if (!data) {
+        return;
       }
+
+      const displayName =
+        data.canonical_name ||
+        data.name;
+
+      setCourseId(
+        String(data.id)
+      );
+
+      setCourseName(
+        displayName
+      );
+
+      setProfessor(
+        data.professor
+      );
+
+      setCourseSearch(
+        displayName
+      );
+
+      setCourseResults([]);
+      setShowResults(false);
     }
 
-    loadCourses();
+    loadInitialCourse();
   }, [initialCourseId]);
 
+  /*
+   * 授業検索
+   *
+   * 2文字以上入力
+   * ↓
+   * 400ms待つ
+   * ↓
+   * search_review_courses RPC
+   *
+   * 最大20件だけ取得。
+   */
+  useEffect(() => {
+    const keyword =
+      courseSearch.trim();
+
+    /*
+     * 選択済みの授業名が
+     * 入っているだけなら再検索しない
+     */
+    if (
+      courseId &&
+      keyword === courseName
+    ) {
+      setCourseResults([]);
+      setShowResults(false);
+      setSearchingCourses(false);
+      return;
+    }
+
+    /*
+     * 2文字未満なら検索しない
+     */
+    if (keyword.length < 2) {
+      setCourseResults([]);
+      setShowResults(false);
+      setSearchingCourses(false);
+      return;
+    }
+
+    const timer =
+      window.setTimeout(
+        async () => {
+          setSearchingCourses(true);
+
+          const {
+            data,
+            error,
+          } = await supabase.rpc(
+            "search_review_courses",
+            {
+              p_search: keyword,
+            }
+          );
+
+          if (error) {
+            console.error(error);
+
+            setCourseResults([]);
+            setShowResults(true);
+            setSearchingCourses(false);
+
+            return;
+          }
+
+          setCourseResults(
+            (data ?? []) as Course[]
+          );
+
+          setShowResults(true);
+          setSearchingCourses(false);
+        },
+        400
+      );
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [
+    courseSearch,
+    courseId,
+    courseName,
+  ]);
+
+  /*
+   * 検索欄を書き換えた場合
+   *
+   * 選択済み授業から
+   * 別の検索を始めたら
+   * 選択状態を解除する。
+   */
+  function handleCourseSearchChange(
+    value: string
+  ) {
+    setCourseSearch(value);
+
+    if (
+      courseId &&
+      value !== courseName
+    ) {
+      setCourseId("");
+      setCourseName("");
+      setProfessor("");
+    }
+
+    setMessage("");
+  }
+
+  /*
+   * 授業を選択
+   */
+  function selectCourse(
+    course: Course
+  ) {
+    const displayName =
+      course.canonical_name ||
+      course.name;
+
+    setCourseId(
+      String(course.id)
+    );
+
+    setCourseName(
+      displayName
+    );
+
+    setProfessor(
+      course.professor
+    );
+
+    setCourseSearch(
+      displayName
+    );
+
+    setCourseResults([]);
+    setShowResults(false);
+    setMessage("");
+  }
+
+  /*
+   * 投稿
+   */
   async function handleSubmit(
     event: FormEvent<HTMLFormElement>
   ) {
@@ -167,6 +346,7 @@ function ReviewForm() {
       setMessage(
         "すべての項目を入力してください。"
       );
+
       return;
     }
 
@@ -174,6 +354,7 @@ function ReviewForm() {
       setMessage(
         "ログインが必要です。"
       );
+
       return;
     }
 
@@ -221,7 +402,8 @@ function ReviewForm() {
       return;
     }
 
-    const submittedCourseId = courseId;
+    const submittedCourseId =
+      courseId;
 
     setMessage(
       "体験記を投稿しました！"
@@ -236,12 +418,15 @@ function ReviewForm() {
     setIsSubmitting(false);
 
     router.push(
-  `/courses/${submittedCourseId}`
-);
+      `/courses/${submittedCourseId}`
+    );
 
-router.refresh();
+    router.refresh();
   }
 
+  /*
+   * ログイン確認中
+   */
   if (loadingUser) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-slate-50">
@@ -252,6 +437,9 @@ router.refresh();
     );
   }
 
+  /*
+   * 未ログイン
+   */
   if (!user) {
     return (
       <main className="min-h-screen bg-slate-50 text-slate-900">
@@ -261,7 +449,7 @@ router.refresh();
               href="/"
               className="text-lg font-bold"
             >
-              慶應wiki
+              慶應Wiki
             </Link>
 
             <Link
@@ -305,7 +493,7 @@ router.refresh();
             href="/"
             className="text-lg font-bold"
           >
-            慶應wiki
+            慶應Wiki
           </Link>
 
           <Link
@@ -339,7 +527,9 @@ router.refresh();
             onSubmit={handleSubmit}
             className="mt-8 space-y-8"
           >
-            {/* 授業 */}
+            {/* =====================
+                授業
+            ===================== */}
             <section className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-7">
               <div className="border-b border-slate-100 pb-4">
                 <p className="text-xs font-bold tracking-widest text-blue-600">
@@ -353,81 +543,149 @@ router.refresh();
 
               <div className="mt-5">
                 <label
-                  htmlFor="courseName"
+                  htmlFor="courseSearch"
                   className="block text-sm font-semibold"
                 >
-                  授業名
+                  授業を検索
                 </label>
 
-                <select
-                  id="courseName"
-                  value={courseId}
-                  onChange={(
-                    event
-                  ) => {
-                    const selectedId =
-                      event.target
-                        .value;
+                <p className="mt-1 text-xs text-slate-500">
+                  授業名または教員名を2文字以上入力してください。
+                </p>
 
-                    const selectedCourse =
-                      courses.find(
-                        (course) =>
-                          String(
-                            course.id
-                          ) ===
-                          selectedId
-                      );
+                <div className="relative mt-2">
+                  <input
+                    id="courseSearch"
+                    type="text"
+                    autoComplete="off"
+                    value={
+                      courseSearch
+                    }
+                    onChange={(
+                      event
+                    ) =>
+                      handleCourseSearchChange(
+                        event.target
+                          .value
+                      )
+                    }
+                    onFocus={() => {
+                      if (
+                        courseResults.length >
+                        0
+                      ) {
+                        setShowResults(
+                          true
+                        );
+                      }
+                    }}
+                    placeholder="例：経済学、山田、Medical"
+                    className="h-12 w-full rounded-lg border border-slate-300 bg-white px-4 pr-16 text-sm outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                  />
 
-                    setCourseId(
-                      selectedId
-                    );
-
-                    setCourseName(
-                      selectedCourse
-                        ?.name ?? ""
-                    );
-
-                    setProfessor(
-                      selectedCourse
-                        ?.professor ??
-                        ""
-                    );
-                  }}
-                  className="mt-2 h-12 w-full rounded-lg border border-slate-300 bg-white px-4 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-                >
-                  <option value="">
-                    授業を選択してください
-                  </option>
-
-                  {courses.map(
-                    (course) => (
-                      <option
-                        key={
-                          course.id
-                        }
-                        value={
-                          course.id
-                        }
-                      >
-                        {
-                          course.name
-                        }
-                        （
-                        {
-                          course.professor
-                        }
-                        ）
-                      </option>
-                    )
+                  {searchingCourses && (
+                    <div className="absolute right-4 top-1/2 -translate-y-1/2 text-xs font-medium text-slate-400">
+                      検索中...
+                    </div>
                   )}
-                </select>
+
+                  {showResults &&
+                    !searchingCourses && (
+                      <div className="absolute left-0 right-0 top-[calc(100%+8px)] z-20 max-h-96 overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-xl">
+                        {courseResults.length >
+                        0 ? (
+                          courseResults.map(
+                            (
+                              course
+                            ) => {
+                              const displayName =
+                                course.canonical_name ||
+                                course.name;
+
+                              return (
+                                <button
+                                  key={
+                                    course.id
+                                  }
+                                  type="button"
+                                  onClick={() =>
+                                    selectCourse(
+                                      course
+                                    )
+                                  }
+                                  className="block w-full border-b border-slate-100 px-4 py-4 text-left transition last:border-b-0 hover:bg-slate-50"
+                                >
+                                  <p className="font-bold text-slate-900">
+                                    {
+                                      displayName
+                                    }
+                                  </p>
+
+                                  <p className="mt-1 text-sm text-slate-600">
+                                    {
+                                      course.professor
+                                    }
+                                  </p>
+
+                                  <div className="mt-2 flex flex-wrap gap-1.5">
+                                    {course.faculty && (
+                                      <span className="rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-500">
+                                        {
+                                          course.faculty
+                                        }
+                                      </span>
+                                    )}
+
+                                    {course.campus && (
+                                      <span className="rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-500">
+                                        {
+                                          course.campus
+                                        }
+                                      </span>
+                                    )}
+
+                                    {course.semester && (
+                                      <span className="rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-500">
+                                        {
+                                          course.semester
+                                        }
+                                      </span>
+                                    )}
+
+                                    {course.level && (
+                                      <span className="rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-500">
+                                        {
+                                          course.level
+                                        }
+                                        年
+                                      </span>
+                                    )}
+                                  </div>
+                                </button>
+                              );
+                            }
+                          )
+                        ) : (
+                          <div className="px-4 py-6 text-center">
+                            <p className="text-sm font-medium text-slate-600">
+                              授業が見つかりません
+                            </p>
+
+                            <p className="mt-1 text-xs text-slate-400">
+                              別の授業名や教員名で検索してください。
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                </div>
               </div>
 
               {/* 選択中の授業 */}
               {courseId &&
                 courseName && (
-                  <div className="mt-4 rounded-xl bg-slate-50 px-4 py-3">
-                    <p className="text-xs font-medium text-slate-500">
+                  <div className="mt-4 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3">
+                    <p className="text-xs font-semibold text-blue-600">
                       選択中の授業
                     </p>
 
@@ -444,11 +702,40 @@ router.refresh();
                         }
                       </p>
                     </div>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCourseId(
+                          ""
+                        );
+                        setCourseName(
+                          ""
+                        );
+                        setProfessor(
+                          ""
+                        );
+                        setCourseSearch(
+                          ""
+                        );
+                        setCourseResults(
+                          []
+                        );
+                        setShowResults(
+                          false
+                        );
+                      }}
+                      className="mt-2 text-xs font-semibold text-blue-600 transition hover:text-blue-700"
+                    >
+                      別の授業を選ぶ
+                    </button>
                   </div>
                 )}
             </section>
 
-            {/* 評価 */}
+            {/* =====================
+                評価
+            ===================== */}
             <section className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-7">
               <div className="border-b border-slate-100 pb-4">
                 <p className="text-xs font-bold tracking-widest text-blue-600">
@@ -465,7 +752,6 @@ router.refresh();
                 </p>
               </div>
 
-              {/* 3評価 */}
               <div className="mt-5 grid gap-5 md:grid-cols-3">
                 {/* 単位 */}
                 <div>
@@ -499,7 +785,8 @@ router.refresh();
                     </option>
 
                     <option value="1">
-                      1 - とても難しい
+                      1 -
+                      とても難しい
                     </option>
 
                     <option value="2">
@@ -511,11 +798,13 @@ router.refresh();
                     </option>
 
                     <option value="4">
-                      4 - 取りやすい
+                      4 -
+                      取りやすい
                     </option>
 
                     <option value="5">
-                      5 - とても取りやすい
+                      5 -
+                      とても取りやすい
                     </option>
                   </select>
                 </div>
@@ -552,7 +841,8 @@ router.refresh();
                     </option>
 
                     <option value="1">
-                      1 - とても難しい
+                      1 -
+                      とても難しい
                     </option>
 
                     <option value="2">
@@ -564,16 +854,18 @@ router.refresh();
                     </option>
 
                     <option value="4">
-                      4 - 取りやすい
+                      4 -
+                      取りやすい
                     </option>
 
                     <option value="5">
-                      5 - とても取りやすい
+                      5 -
+                      とても取りやすい
                     </option>
                   </select>
                 </div>
 
-                {/* 課題量 */}
+                {/* 課題 */}
                 <div>
                   <label
                     htmlFor="workload"
@@ -588,7 +880,9 @@ router.refresh();
 
                   <select
                     id="workload"
-                    value={workload}
+                    value={
+                      workload
+                    }
                     onChange={(
                       event
                     ) =>
@@ -604,7 +898,8 @@ router.refresh();
                     </option>
 
                     <option value="1">
-                      1 - とても少ない
+                      1 -
+                      とても少ない
                     </option>
 
                     <option value="2">
@@ -620,14 +915,17 @@ router.refresh();
                     </option>
 
                     <option value="5">
-                      5 - とても多い
+                      5 -
+                      とても多い
                     </option>
                   </select>
                 </div>
               </div>
             </section>
 
-            {/* 成績 */}
+            {/* =====================
+                成績
+            ===================== */}
             <section className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-7">
               <div>
                 <p className="text-xs font-bold tracking-widest text-blue-600">
@@ -643,7 +941,6 @@ router.refresh();
                 </p>
               </div>
 
-              {/* S A B C D ボタン */}
               <div className="mt-5 grid grid-cols-5 gap-2 sm:max-w-lg sm:gap-3">
                 {[
                   "S",
@@ -652,7 +949,9 @@ router.refresh();
                   "C",
                   "D",
                 ].map(
-                  (gradeOption) => (
+                  (
+                    gradeOption
+                  ) => (
                     <button
                       key={
                         gradeOption
@@ -688,7 +987,9 @@ router.refresh();
               )}
             </section>
 
-            {/* コメント */}
+            {/* =====================
+                体験記
+            ===================== */}
             <section className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-7">
               <div>
                 <p className="text-xs font-bold tracking-widest text-blue-600">
@@ -713,7 +1014,8 @@ router.refresh();
                   event
                 ) =>
                   setComment(
-                    event.target.value
+                    event.target
+                      .value
                   )
                 }
                 placeholder="例：毎週課題があります。試験は授業内容を理解していれば解ける問題が中心でした。出席は..."
@@ -722,7 +1024,9 @@ router.refresh();
 
               <div className="mt-2 flex justify-end">
                 <span className="text-xs text-slate-400">
-                  {comment.length}
+                  {
+                    comment.length
+                  }
                   文字
                 </span>
               </div>

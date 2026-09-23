@@ -1,14 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useState,
+} from "react";
 import Link from "next/link";
-
-type Review = {
-  id: number;
-  rating: number | null;
-  easy_s: number | null;
-  workload: number | null;
-};
+import { supabase } from "../../lib/supabase";
 
 type Course = {
   id: number;
@@ -20,11 +18,14 @@ type Course = {
   period: number | null;
   campus: string | null;
   semester: string | null;
-  reviews: Review[] | null;
-};
-
-type CourseListProps = {
-  courses: Course[];
+  level: string | null;
+  source: string | null;
+  syllabus_url: string | null;
+  review_count: number;
+  avg_rating: number | null;
+  avg_easy_s: number | null;
+  avg_workload: number | null;
+  total_count: number;
 };
 
 type SortType =
@@ -35,189 +36,341 @@ type SortType =
   | "workload_low"
   | "workload_high";
 
-export default function CourseList({
-  courses,
-}: CourseListProps) {
-  const [searchText, setSearchText] = useState("");
-  const [selectedFaculty, setSelectedFaculty] = useState("すべて");
-  const [selectedCampus, setSelectedCampus] = useState("すべて");
-  const [selectedWeekday, setSelectedWeekday] = useState("すべて");
-  const [selectedSemester, setSelectedSemester] = useState("すべて");
-  const [selectedPeriod, setSelectedPeriod] = useState("すべて");
+const PAGE_SIZE = 20;
 
-  const [sortType, setSortType] =
-    useState<SortType>("default");
+const campuses = [
+  "三田",
+  "日吉",
+  "湘南藤沢",
+  "矢上",
+  "信濃町",
+  "芝共立",
+];
 
-  const faculties = [
-    ...new Set(
-      courses
-        .map((course) => course.faculty)
-        .filter(
-          (faculty): faculty is string =>
-            Boolean(faculty)
-        )
-    ),
-  ];
+const weekdays = [
+  "月",
+  "火",
+  "水",
+  "木",
+  "金",
+  "土",
+];
 
-  const campuses = [
-    ...new Set(
-      courses
-        .map((course) => course.campus)
-        .filter(
-          (campus): campus is string =>
-            Boolean(campus)
-        )
-    ),
-  ];
+const periods = [
+  "1",
+  "2",
+  "3",
+  "4",
+  "5",
+  "6",
+];
+
+const levels = [
+  "1",
+  "2",
+  "3",
+  "4",
+  "5",
+  "6",
+];
+
+const semesters = [
+  "春",
+  "秋",
+  "通年",
+  "春(学期前半)",
+  "春(学期後半)",
+  "秋(学期前半)",
+  "秋(学期後半)",
+  "春集中(特定期間集中)",
+  "秋集中(特定期間集中)",
+];
+
+export default function CourseList() {
+  const [courses, setCourses] =
+    useState<Course[]>([]);
+
+  const [loading, setLoading] =
+    useState(true);
+
+  const [errorMessage, setErrorMessage] =
+    useState("");
 
   /*
-   * 検索・絞り込み
+   * 検索
    */
-  const filteredCourses = courses.filter(
-    (course) => {
-      const keyword = searchText
-        .trim()
-        .toLowerCase();
+  const [searchInput, setSearchInput] =
+    useState("");
 
-      const matchesSearch =
-        course.name
-          .toLowerCase()
-          .includes(keyword) ||
-        course.professor
-          .toLowerCase()
-          .includes(keyword);
+  const [searchText, setSearchText] =
+    useState("");
 
-      const matchesFaculty =
-        selectedFaculty === "すべて" ||
-        course.faculty === selectedFaculty;
+  /*
+   * 絞り込み
+   */
+  const [
+    selectedFaculty,
+    setSelectedFaculty,
+  ] = useState("");
 
-      const matchesCampus =
-        selectedCampus === "すべて" ||
-        course.campus === selectedCampus;
+  const [
+    selectedCampus,
+    setSelectedCampus,
+  ] = useState("");
 
-      const matchesWeekday =
-        selectedWeekday === "すべて" ||
-        course.weekday === selectedWeekday;
+  const [
+    selectedWeekday,
+    setSelectedWeekday,
+  ] = useState("");
 
-      const matchesSemester =
-        selectedSemester === "すべて" ||
-        course.semester === selectedSemester;
+  const [
+    selectedSemester,
+    setSelectedSemester,
+  ] = useState("");
 
-      const matchesPeriod =
-        selectedPeriod === "すべて" ||
-        course.period ===
-          Number(selectedPeriod);
+  const [
+    selectedPeriod,
+    setSelectedPeriod,
+  ] = useState("");
 
-      return (
-        matchesSearch &&
-        matchesFaculty &&
-        matchesCampus &&
-        matchesWeekday &&
-        matchesSemester &&
-        matchesPeriod
-      );
-    }
-  );
+  const [
+    selectedLevel,
+    setSelectedLevel,
+  ] = useState("");
 
   /*
    * 並び替え
    */
-  const sortedCourses = [
-    ...filteredCourses,
-  ].sort((a, b) => {
-    const aReviews = a.reviews ?? [];
-    const bReviews = b.reviews ?? [];
+  const [sortType, setSortType] =
+    useState<SortType>("default");
 
-    // レビュー数
-    if (sortType === "reviews") {
-      return (
-        bReviews.length -
-        aReviews.length
+  /*
+   * ページ
+   */
+  const [page, setPage] =
+    useState(1);
+
+  const [
+    totalCount,
+    setTotalCount,
+  ] = useState(0);
+
+  /*
+   * Supabaseから授業を取得
+   *
+   * 25,000件すべてを取得せず、
+   * 検索条件に合う20件だけ取得する。
+   */
+  const fetchCourses =
+    useCallback(async () => {
+      setLoading(true);
+      setErrorMessage("");
+
+      const { data, error } =
+        await supabase.rpc(
+          "search_courses",
+          {
+            p_search: searchText,
+
+            p_faculty:
+              selectedFaculty,
+
+            p_campus:
+              selectedCampus,
+
+            p_weekday:
+              selectedWeekday,
+
+            p_semester:
+              selectedSemester,
+
+            p_period:
+              selectedPeriod
+                ? Number(
+                    selectedPeriod
+                  )
+                : null,
+
+            p_level:
+              selectedLevel,
+
+            p_sort:
+              sortType,
+
+            p_page:
+              page,
+
+            p_page_size:
+              PAGE_SIZE,
+          }
+        );
+
+      if (error) {
+        console.error(error);
+
+        setCourses([]);
+        setTotalCount(0);
+        setErrorMessage(
+          error.message
+        );
+
+        setLoading(false);
+        return;
+      }
+
+      const rows =
+        (data ?? []) as Course[];
+
+      setCourses(rows);
+
+      if (rows.length > 0) {
+        setTotalCount(
+          Number(
+            rows[0].total_count ??
+              0
+          )
+        );
+      } else {
+        setTotalCount(0);
+      }
+
+      setLoading(false);
+    }, [
+      searchText,
+      selectedFaculty,
+      selectedCampus,
+      selectedWeekday,
+      selectedSemester,
+      selectedPeriod,
+      selectedLevel,
+      sortType,
+      page,
+    ]);
+
+  useEffect(() => {
+    fetchCourses();
+  }, [fetchCourses]);
+
+  /*
+   * 検索欄
+   *
+   * 入力するたびに即検索せず、
+   * 400ms待ってから検索する。
+   */
+  useEffect(() => {
+    const timer =
+      window.setTimeout(() => {
+        setPage(1);
+
+        setSearchText(
+          searchInput.trim()
+        );
+      }, 400);
+
+    return () => {
+      window.clearTimeout(
+        timer
       );
-    }
+    };
+  }, [searchInput]);
 
-    // 単位の取りやすさ
-    if (sortType === "rating") {
-      return compareAverageHigh(
-        aReviews.map(
-          (review) => review.rating
-        ),
-        bReviews.map(
-          (review) => review.rating
-        )
-      );
-    }
-
-    // Sの取りやすさ
-    if (sortType === "easy_s") {
-      return compareAverageHigh(
-        aReviews.map(
-          (review) => review.easy_s
-        ),
-        bReviews.map(
-          (review) => review.easy_s
-        )
-      );
-    }
-
-    // 課題量が少ない順
-    if (
-      sortType === "workload_low"
-    ) {
-      return compareAverageLow(
-        aReviews.map(
-          (review) =>
-            review.workload
-        ),
-        bReviews.map(
-          (review) =>
-            review.workload
-        )
-      );
-    }
-
-    // 課題量が多い順
-    if (
-      sortType === "workload_high"
-    ) {
-      return compareAverageHigh(
-        aReviews.map(
-          (review) =>
-            review.workload
-        ),
-        bReviews.map(
-          (review) =>
-            review.workload
-        )
-      );
-    }
-
-    // 通常順
-    return a.id - b.id;
-  });
-
+  /*
+   * リセット
+   */
   function resetFilters() {
+    setSearchInput("");
     setSearchText("");
-    setSelectedFaculty("すべて");
-    setSelectedCampus("すべて");
-    setSelectedWeekday("すべて");
-    setSelectedSemester("すべて");
-    setSelectedPeriod("すべて");
+
+    setSelectedFaculty("");
+    setSelectedCampus("");
+    setSelectedWeekday("");
+    setSelectedSemester("");
+    setSelectedPeriod("");
+    setSelectedLevel("");
+
     setSortType("default");
+
+    setPage(1);
   }
+
+  /*
+   * 各フィルター変更
+   */
+  function changeFaculty(
+    value: string
+  ) {
+    setSelectedFaculty(value);
+    setPage(1);
+  }
+
+  function changeCampus(
+    value: string
+  ) {
+    setSelectedCampus(value);
+    setPage(1);
+  }
+
+  function changeWeekday(
+    value: string
+  ) {
+    setSelectedWeekday(value);
+    setPage(1);
+  }
+
+  function changeSemester(
+    value: string
+  ) {
+    setSelectedSemester(value);
+    setPage(1);
+  }
+
+  function changePeriod(
+    value: string
+  ) {
+    setSelectedPeriod(value);
+    setPage(1);
+  }
+
+  function changeLevel(
+    value: string
+  ) {
+    setSelectedLevel(value);
+    setPage(1);
+  }
+
+  function changeSort(
+    value: SortType
+  ) {
+    setSortType(value);
+    setPage(1);
+  }
+
+  /*
+   * 総ページ数
+   */
+  const totalPages =
+    Math.max(
+      1,
+      Math.ceil(
+        totalCount / PAGE_SIZE
+      )
+    );
 
   const selectClass =
     "h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 outline-none transition hover:border-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-100";
 
   return (
     <>
-      {/* 検索 */}
+      {/* =========================
+          検索・絞り込み
+      ========================= */}
       <div className="mt-8">
+        {/* 授業名・教員名検索 */}
         <input
           type="text"
-          value={searchText}
+          value={searchInput}
           onChange={(event) =>
-            setSearchText(
+            setSearchInput(
               event.target.value
             )
           }
@@ -225,43 +378,40 @@ export default function CourseList({
           className="h-12 w-full rounded-lg border border-slate-300 bg-white px-4 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
         />
 
-        {/* 絞り込み */}
-        <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
-          <select
-            value={selectedFaculty}
+        {/* =========================
+            絞り込み
+        ========================= */}
+        <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {/* 学部・研究科 */}
+          <input
+            type="text"
+            value={
+              selectedFaculty
+            }
             onChange={(event) =>
-              setSelectedFaculty(
+              changeFaculty(
                 event.target.value
               )
             }
-            className={selectClass}
-          >
-            <option value="すべて">
-              すべての学部
-            </option>
+            placeholder="学部・研究科"
+            className="h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 outline-none transition placeholder:text-slate-400 hover:border-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+          />
 
-            {faculties.map(
-              (faculty) => (
-                <option
-                  key={faculty}
-                  value={faculty}
-                >
-                  {faculty}
-                </option>
-              )
-            )}
-          </select>
-
+          {/* キャンパス */}
           <select
-            value={selectedCampus}
+            value={
+              selectedCampus
+            }
             onChange={(event) =>
-              setSelectedCampus(
+              changeCampus(
                 event.target.value
               )
             }
-            className={selectClass}
+            className={
+              selectClass
+            }
           >
-            <option value="すべて">
+            <option value="">
               すべてのキャンパス
             </option>
 
@@ -277,96 +427,130 @@ export default function CourseList({
             )}
           </select>
 
+          {/* 学年 */}
           <select
-            value={selectedWeekday}
+            value={
+              selectedLevel
+            }
             onChange={(event) =>
-              setSelectedWeekday(
+              changeLevel(
                 event.target.value
               )
             }
-            className={selectClass}
+            className={
+              selectClass
+            }
           >
-            <option value="すべて">
+            <option value="">
+              すべての学年
+            </option>
+
+            {levels.map(
+              (level) => (
+                <option
+                  key={level}
+                  value={level}
+                >
+                  {level}年
+                </option>
+              )
+            )}
+          </select>
+
+          {/* 曜日 */}
+          <select
+            value={
+              selectedWeekday
+            }
+            onChange={(event) =>
+              changeWeekday(
+                event.target.value
+              )
+            }
+            className={
+              selectClass
+            }
+          >
+            <option value="">
               すべての曜日
             </option>
 
-            <option value="月">
-              月曜日
-            </option>
-            <option value="火">
-              火曜日
-            </option>
-            <option value="水">
-              水曜日
-            </option>
-            <option value="木">
-              木曜日
-            </option>
-            <option value="金">
-              金曜日
-            </option>
-            <option value="土">
-              土曜日
-            </option>
+            {weekdays.map(
+              (weekday) => (
+                <option
+                  key={weekday}
+                  value={weekday}
+                >
+                  {weekday}曜日
+                </option>
+              )
+            )}
           </select>
 
+          {/* 学期 */}
           <select
-            value={selectedSemester}
+            value={
+              selectedSemester
+            }
             onChange={(event) =>
-              setSelectedSemester(
+              changeSemester(
                 event.target.value
               )
             }
-            className={selectClass}
+            className={
+              selectClass
+            }
           >
-            <option value="すべて">
+            <option value="">
               すべての学期
             </option>
 
-            <option value="春学期">
-              春学期
-            </option>
-
-            <option value="秋学期">
-              秋学期
-            </option>
+            {semesters.map(
+              (semester) => (
+                <option
+                  key={semester}
+                  value={semester}
+                >
+                  {semester}
+                </option>
+              )
+            )}
           </select>
 
+          {/* 時限 */}
           <select
-            value={selectedPeriod}
+            value={
+              selectedPeriod
+            }
             onChange={(event) =>
-              setSelectedPeriod(
+              changePeriod(
                 event.target.value
               )
             }
-            className={selectClass}
+            className={
+              selectClass
+            }
           >
-            <option value="すべて">
+            <option value="">
               すべての時限
             </option>
 
-            <option value="1">
-              1限
-            </option>
-            <option value="2">
-              2限
-            </option>
-            <option value="3">
-              3限
-            </option>
-            <option value="4">
-              4限
-            </option>
-            <option value="5">
-              5限
-            </option>
-            <option value="6">
-              6限
-            </option>
+            {periods.map(
+              (period) => (
+                <option
+                  key={period}
+                  value={period}
+                >
+                  {period}限
+                </option>
+              )
+            )}
           </select>
         </div>
 
-        {/* 並び替え */}
+        {/* =========================
+            並び替え
+        ========================= */}
         <div className="mt-5 flex flex-col gap-3 border-t border-slate-200 pt-5 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-3">
             <span className="shrink-0 text-sm font-semibold text-slate-700">
@@ -376,7 +560,7 @@ export default function CourseList({
             <select
               value={sortType}
               onChange={(event) =>
-                setSortType(
+                changeSort(
                   event.target
                     .value as SortType
                 )
@@ -411,7 +595,7 @@ export default function CourseList({
 
           <p className="text-sm text-slate-500">
             <span className="font-bold text-slate-900">
-              {sortedCourses.length}
+              {totalCount.toLocaleString()}
             </span>
             件の授業
           </p>
@@ -420,7 +604,9 @@ export default function CourseList({
         {/* リセット */}
         <button
           type="button"
-          onClick={resetFilters}
+          onClick={
+            resetFilters
+          }
           className="mt-4 inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-400 hover:bg-slate-50"
         >
           <span>↻</span>
@@ -428,292 +614,329 @@ export default function CourseList({
         </button>
       </div>
 
-      {/* 0件 */}
-      {sortedCourses.length === 0 && (
-        <div className="mt-10 rounded-xl border border-slate-200 bg-white px-6 py-12 text-center">
-          <p className="font-semibold text-slate-800">
-            該当する授業が見つかりません
+      {/* =========================
+          エラー
+      ========================= */}
+      {errorMessage && (
+        <div className="mt-8 rounded-xl border border-red-200 bg-red-50 px-5 py-4">
+          <p className="font-semibold text-red-700">
+            授業を取得できませんでした
           </p>
 
-          <p className="mt-2 text-sm text-slate-500">
-            検索条件を変更してみてください。
+          <p className="mt-1 text-sm text-red-600">
+            {errorMessage}
           </p>
-
-          <button
-            type="button"
-            onClick={resetFilters}
-            className="mt-5 font-semibold text-blue-600 hover:text-blue-700"
-          >
-            条件をリセット
-          </button>
         </div>
       )}
 
-      {/* 授業一覧 */}
-      {sortedCourses.length > 0 && (
-        <div className="mt-8 grid gap-4">
-          {sortedCourses.map(
-            (course) => {
-              const reviews =
-                course.reviews ?? [];
+      {/* =========================
+          読み込み中
+      ========================= */}
+      {loading && (
+        <div className="mt-10 rounded-xl border border-slate-200 bg-white px-6 py-12 text-center">
+          <p className="font-semibold text-slate-700">
+            授業を読み込んでいます...
+          </p>
+        </div>
+      )}
 
-              const ratingValues =
-                reviews
-                  .map(
-                    (review) =>
-                      review.rating
-                  )
-                  .filter(
-                    (
-                      value
-                    ): value is number =>
-                      value !== null
-                  );
+      {/* =========================
+          0件
+      ========================= */}
+      {!loading &&
+        !errorMessage &&
+        courses.length ===
+          0 && (
+          <div className="mt-10 rounded-xl border border-slate-200 bg-white px-6 py-12 text-center">
+            <p className="font-semibold text-slate-800">
+              該当する授業が見つかりません
+            </p>
 
-              const easySValues =
-                reviews
-                  .map(
-                    (review) =>
-                      review.easy_s
-                  )
-                  .filter(
-                    (
-                      value
-                    ): value is number =>
-                      value !== null
-                  );
+            <p className="mt-2 text-sm text-slate-500">
+              検索条件を変更してみてください。
+            </p>
 
-              const workloadValues =
-                reviews
-                  .map(
-                    (review) =>
-                      review.workload
-                  )
-                  .filter(
-                    (
-                      value
-                    ): value is number =>
-                      value !== null
-                  );
+            <button
+              type="button"
+              onClick={
+                resetFilters
+              }
+              className="mt-5 font-semibold text-blue-600 hover:text-blue-700"
+            >
+              条件をリセット
+            </button>
+          </div>
+        )}
 
-              const averageRating =
-                getAverage(
-                  ratingValues
-                );
-
-              const averageEasyS =
-                getAverage(
-                  easySValues
-                );
-
-              const averageWorkload =
-                getAverage(
-                  workloadValues
-                );
-
-              return (
-                <Link
-                  key={course.id}
-                  href={`/courses/${course.id}`}
-                  className="group block rounded-xl border border-slate-200 bg-white p-6 shadow-sm transition hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-md"
-                >
-                  <div className="grid gap-6 lg:grid-cols-[1fr_auto] lg:items-center">
-                    {/* 左側 */}
-                    <div className="min-w-0">
-                      <div className="mb-3 flex flex-wrap gap-2">
-                        {course.faculty && (
-                          <span className="rounded-md bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600">
-                            {
-                              course.faculty
-                            }
-                          </span>
-                        )}
-
-                        {course.campus && (
-                          <span className="rounded-md bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600">
-                            {
-                              course.campus
-                            }
-                          </span>
-                        )}
-
-                        {course.semester && (
-                          <span className="rounded-md bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600">
-                            {
-                              course.semester
-                            }
-                          </span>
-                        )}
-
-                        {course.weekday &&
-                          course.period && (
-                            <span className="rounded-md bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600">
-                              {
-                                course.weekday
-                              }
-                              曜{" "}
-                              {
-                                course.period
-                              }
-                              限
+      {/* =========================
+          授業一覧
+      ========================= */}
+      {!loading &&
+        !errorMessage &&
+        courses.length >
+          0 && (
+          <>
+            <div className="mt-8 grid gap-4">
+              {courses.map(
+                (course) => (
+                  <Link
+                    key={
+                      course.id
+                    }
+                    href={`/courses/${course.id}`}
+                    className="group block rounded-xl border border-slate-200 bg-white p-6 shadow-sm transition hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-md"
+                  >
+                    <div className="grid gap-6 lg:grid-cols-[1fr_auto] lg:items-center">
+                      {/* 左側 */}
+                      <div className="min-w-0">
+                        <div className="mb-3 flex flex-wrap gap-2">
+                          {/* 公式 */}
+                          {course.source ===
+                            "keio_syllabus" && (
+                            <span className="rounded-md bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700">
+                              公式シラバス
                             </span>
                           )}
-                      </div>
 
-                      <h2 className="text-xl font-bold tracking-tight text-slate-950 transition group-hover:text-blue-600">
-                        {course.name}
-                      </h2>
+                          {/* 学部 */}
+                          {course.faculty && (
+                            <span className="rounded-md bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600">
+                              {
+                                course.faculty
+                              }
+                            </span>
+                          )}
 
-                      <p className="mt-1.5 text-sm text-slate-600">
-                        {
-                          course.professor
-                        }
-                      </p>
+                          {/* キャンパス */}
+                          {course.campus && (
+                            <span className="rounded-md bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600">
+                              {
+                                course.campus
+                              }
+                            </span>
+                          )}
 
-                      {course.description && (
-                        <p className="mt-3 line-clamp-2 max-w-2xl text-sm leading-6 text-slate-500">
+                          {/* 学年 */}
+                          {course.level && (
+                            <span className="rounded-md bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600">
+                              {
+                                course.level
+                              }
+                              年
+                            </span>
+                          )}
+
+                          {/* 学期 */}
+                          {course.semester && (
+                            <span className="rounded-md bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600">
+                              {
+                                course.semester
+                              }
+                            </span>
+                          )}
+
+                          {/* 曜日・時限 */}
+                          {course.weekday &&
+                            course.period && (
+                              <span className="rounded-md bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600">
+                                {
+                                  course.weekday
+                                }
+                                曜{" "}
+                                {
+                                  course.period
+                                }
+                                限
+                              </span>
+                            )}
+                        </div>
+
+                        {/* 授業名 */}
+                        <h2 className="text-xl font-bold tracking-tight text-slate-950 transition group-hover:text-blue-600">
                           {
-                            course.description
+                            course.name
+                          }
+                        </h2>
+
+                        {/* 教員 */}
+                        <p className="mt-1.5 text-sm text-slate-600">
+                          {
+                            course.professor
                           }
                         </p>
-                      )}
-                    </div>
 
-                    {/* 評価 */}
-                    <div className="flex flex-wrap items-stretch gap-2 lg:flex-nowrap">
-                      <CourseStat
-                        label="レビュー"
-                        value={`${reviews.length}件`}
-                      />
+                        {/* 説明 */}
+                        {course.description && (
+                          <p className="mt-3 line-clamp-2 max-w-2xl text-sm leading-6 text-slate-500">
+                            {
+                              course.description
+                            }
+                          </p>
+                        )}
+                      </div>
 
-                      <CourseStat
-                        label="単位"
-                        value={
-                          averageRating ===
-                          null
-                            ? "—"
-                            : `${averageRating.toFixed(
-                                1
-                              )} / 5`
-                        }
-                      />
+                      {/* =====================
+                          評価
+                      ===================== */}
+                      <div className="flex flex-wrap items-stretch gap-2 lg:flex-nowrap">
+                        <CourseStat
+                          label="レビュー"
+                          value={`${course.review_count}件`}
+                        />
 
-                      <CourseStat
-                        label="Sの取りやすさ"
-                        value={
-                          averageEasyS ===
-                          null
-                            ? "—"
-                            : `${averageEasyS.toFixed(
-                                1
-                              )} / 5`
-                        }
-                      />
+                        <CourseStat
+                          label="単位"
+                          value={
+                            course.avg_rating ===
+                            null
+                              ? "—"
+                              : `${Number(
+                                  course.avg_rating
+                                ).toFixed(
+                                  1
+                                )} / 5`
+                          }
+                        />
 
-                      <CourseStat
-                        label="課題量"
-                        value={
-                          averageWorkload ===
-                          null
-                            ? "—"
-                            : `${averageWorkload.toFixed(
-                                1
-                              )} / 5`
-                        }
-                      />
+                        <CourseStat
+                          label="Sの取りやすさ"
+                          value={
+                            course.avg_easy_s ===
+                            null
+                              ? "—"
+                              : `${Number(
+                                  course.avg_easy_s
+                                ).toFixed(
+                                  1
+                                )} / 5`
+                          }
+                        />
 
-                      <div className="flex min-w-10 items-center justify-center pl-2 text-xl text-slate-300 transition group-hover:translate-x-1 group-hover:text-blue-600">
-                        →
+                        <CourseStat
+                          label="課題量"
+                          value={
+                            course.avg_workload ===
+                            null
+                              ? "—"
+                              : `${Number(
+                                  course.avg_workload
+                                ).toFixed(
+                                  1
+                                )} / 5`
+                          }
+                        />
+
+                        <div className="flex min-w-10 items-center justify-center pl-2 text-xl text-slate-300 transition group-hover:translate-x-1 group-hover:text-blue-600">
+                          →
+                        </div>
                       </div>
                     </div>
-                  </div>
-                </Link>
-              );
-            }
-          )}
-        </div>
-      )}
+                  </Link>
+                )
+              )}
+            </div>
+
+            {/* =========================
+                ページ送り
+            ========================= */}
+            <div className="mt-8 flex flex-col items-center justify-between gap-4 border-t border-slate-200 pt-6 sm:flex-row">
+              <p className="text-sm text-slate-500">
+                {totalCount.toLocaleString()}
+                件中{" "}
+                {(
+                  (page - 1) *
+                    PAGE_SIZE +
+                  1
+                ).toLocaleString()}
+                〜
+                {Math.min(
+                  page *
+                    PAGE_SIZE,
+                  totalCount
+                ).toLocaleString()}
+                件を表示
+              </p>
+
+              <div className="flex items-center gap-2">
+                {/* 前へ */}
+                <button
+                  type="button"
+                  disabled={
+                    page <= 1
+                  }
+                  onClick={() => {
+                    setPage(
+                      (
+                        current
+                      ) =>
+                        Math.max(
+                          1,
+                          current -
+                            1
+                        )
+                    );
+
+                    window.scrollTo(
+                      {
+                        top: 0,
+                        behavior:
+                          "smooth",
+                      }
+                    );
+                  }}
+                  className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  ← 前へ
+                </button>
+
+                {/* ページ番号 */}
+                <span className="px-3 text-sm font-semibold text-slate-700">
+                  {page} /{" "}
+                  {totalPages}
+                </span>
+
+                {/* 次へ */}
+                <button
+                  type="button"
+                  disabled={
+                    page >=
+                    totalPages
+                  }
+                  onClick={() => {
+                    setPage(
+                      (
+                        current
+                      ) =>
+                        Math.min(
+                          totalPages,
+                          current +
+                            1
+                        )
+                    );
+
+                    window.scrollTo(
+                      {
+                        top: 0,
+                        behavior:
+                          "smooth",
+                      }
+                    );
+                  }}
+                  className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  次へ →
+                </button>
+              </div>
+            </div>
+          </>
+        )}
     </>
   );
 }
 
 /*
- * 平均値
+ * 評価カード
  */
-function getAverage(
-  values: (number | null)[]
-): number | null {
-  const validValues =
-    values.filter(
-      (value): value is number =>
-        value !== null
-    );
-
-  if (validValues.length === 0) {
-    return null;
-  }
-
-  return (
-    validValues.reduce(
-      (total, value) =>
-        total + value,
-      0
-    ) / validValues.length
-  );
-}
-
-/*
- * 高い順
- * 評価がない授業は最後
- */
-function compareAverageHigh(
-  aValues: (number | null)[],
-  bValues: (number | null)[]
-) {
-  const a = getAverage(aValues);
-  const b = getAverage(bValues);
-
-  if (a === null && b === null) {
-    return 0;
-  }
-
-  if (a === null) {
-    return 1;
-  }
-
-  if (b === null) {
-    return -1;
-  }
-
-  return b - a;
-}
-
-/*
- * 低い順
- * 評価がない授業は最後
- */
-function compareAverageLow(
-  aValues: (number | null)[],
-  bValues: (number | null)[]
-) {
-  const a = getAverage(aValues);
-  const b = getAverage(bValues);
-
-  if (a === null && b === null) {
-    return 0;
-  }
-
-  if (a === null) {
-    return 1;
-  }
-
-  if (b === null) {
-    return -1;
-  }
-
-  return a - b;
-}
-
 function CourseStat({
   label,
   value,
