@@ -48,7 +48,6 @@ export default async function CoursePage({
       faculty,
       credits,
       description,
-      evaluation,
       official_evaluation,
       official_course_description,
       weekday,
@@ -131,6 +130,7 @@ export default async function CoursePage({
   // =========================
   // 単位の取りやすさ
   // =========================
+
   const ratingReviews = reviews.filter(
     (review) =>
       review.rating !== null &&
@@ -149,6 +149,7 @@ export default async function CoursePage({
   // =========================
   // Sの取りやすさ
   // =========================
+
   const easySReviews = reviews.filter(
     (review) =>
       review.easy_s !== null &&
@@ -167,6 +168,7 @@ export default async function CoursePage({
   // =========================
   // 課題量
   // =========================
+
   const workloadReviews = reviews.filter(
     (review) =>
       review.workload !== null &&
@@ -186,6 +188,7 @@ export default async function CoursePage({
   // =========================
   // 成績分布
   // =========================
+
   const gradeOrder = [
     "S",
     "A",
@@ -241,16 +244,9 @@ export default async function CoursePage({
       : null;
 
   // =========================
-  // 評価方法
+  // 公式授業情報の有無
   // =========================
-  const evaluationItems =
-    Array.isArray(course.evaluation)
-      ? (course.evaluation as EvaluationItem[])
-      : [];
 
-  // =========================
-  // 授業情報が存在するか
-  // =========================
   const hasOfficialInfo =
     course.academic_year ||
     course.credits ||
@@ -266,9 +262,7 @@ export default async function CoursePage({
 
   return (
     <main className="min-h-screen bg-slate-50 text-slate-900">
-      {/* =========================
-          HEADER
-      ========================= */}
+      {/* HEADER */}
       <header className="border-b border-slate-200 bg-white">
         <div className="mx-auto flex min-h-16 max-w-6xl items-center justify-between gap-4 px-5 py-3 sm:px-8">
           <Link
@@ -307,76 +301,7 @@ export default async function CoursePage({
       </header>
 
       <div className="mx-auto max-w-6xl px-5 py-10 sm:px-8 sm:py-14">
-
-{/* どんな授業？ */}
-<section className="rounded-xl border border-slate-200 bg-white p-6 sm:p-7">
-  <p className="text-xs font-bold tracking-widest text-blue-600">
-    COURSE OVERVIEW
-  </p>
-
-  <h2 className="mt-2 text-xl font-bold text-slate-900">
-    どんな授業？
-  </h2>
-
-  <div className="mt-5">
-    <div className="flex flex-wrap items-center justify-between gap-3">
-      <div className="flex items-center gap-2">
-        <span className="rounded-md bg-blue-50 px-2.5 py-1 text-xs font-bold text-blue-700">
-          公式シラバス
-        </span>
-
-        {course.academic_year && (
-          <span className="text-xs text-slate-400">
-            {course.academic_year}年度
-          </span>
-        )}
-      </div>
-
-      {course.syllabus_url && (
-        <a
-          href={course.syllabus_url}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-xs font-semibold text-blue-600 transition hover:text-blue-700"
-        >
-          公式シラバスを見る ↗
-        </a>
-      )}
-    </div>
-
-    {course.official_course_description ? (
-      <div className="mt-4 rounded-lg border border-blue-100 bg-blue-50/50 px-5 py-4">
-        <p className="whitespace-pre-wrap break-words text-sm leading-7 text-slate-700">
-          {course.official_course_description}
-        </p>
-      </div>
-    ) : (
-      <div className="mt-4 rounded-lg bg-slate-50 px-5 py-5">
-        <p className="text-sm text-slate-500">
-          公式シラバスの授業概要はまだ取り込まれていません。
-        </p>
-
-        {course.syllabus_url && (
-          <a
-            href={course.syllabus_url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="mt-2 inline-flex text-sm font-semibold text-blue-600 hover:text-blue-700"
-          >
-            公式シラバスで確認する ↗
-          </a>
-        )}
-      </div>
-    )}
-  </div>
-
-  <DescriptionNotes courseId={course.id} />
-</section>
-
-
-        {/* =========================
-            COURSE HEADER
-        ========================= */}
+        {/* COURSE HEADER */}
         <section>
           <div className="flex flex-wrap gap-2">
             {isOfficial && (
@@ -460,9 +385,7 @@ export default async function CoursePage({
           </div>
         </section>
 
-        {/* =========================
-            RATINGS
-        ========================= */}
+        {/* RATINGS */}
         <section className="mt-10">
           <div className="mb-4">
             <p className="text-xs font-bold tracking-widest text-blue-600">
@@ -520,39 +443,35 @@ export default async function CoursePage({
           </div>
         </section>
 
-        {/* =========================
-    PAST EXAMS
-========================= */}
-<section className="mt-5">
-  <Link
-    href={`/courses/${course.id}/past-exams`}
-    className="group block rounded-xl border border-slate-200 bg-white p-6 transition hover:border-blue-300 hover:shadow-sm sm:p-7"
-  >
-    <div className="flex items-center justify-between gap-6">
-      <div>
-        <p className="text-xs font-bold tracking-widest text-blue-600">
-          PAST EXAMS
-        </p>
+        {/* PAST EXAMS */}
+        <section className="mt-5">
+          <Link
+            href={`/courses/${course.id}/past-exams`}
+            className="group block rounded-xl border border-slate-200 bg-white p-6 transition hover:border-blue-300 hover:shadow-sm sm:p-7"
+          >
+            <div className="flex items-center justify-between gap-6">
+              <div>
+                <p className="text-xs font-bold tracking-widest text-blue-600">
+                  PAST EXAMS
+                </p>
 
-        <h2 className="mt-2 text-xl font-bold text-slate-900">
-          過去問
-        </h2>
+                <h2 className="mt-2 text-xl font-bold text-slate-900">
+                  過去問
+                </h2>
 
-        <p className="mt-2 text-sm leading-6 text-slate-500">
-          この授業の過去問を確認・共有できます。
-        </p>
-      </div>
+                <p className="mt-2 text-sm leading-6 text-slate-500">
+                  この授業の過去問を確認・共有できます。
+                </p>
+              </div>
 
-      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xl font-bold text-slate-700 transition group-hover:bg-blue-600 group-hover:text-white">
-        →
-      </div>
-    </div>
-  </Link>
-</section>
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xl font-bold text-slate-700 transition group-hover:bg-blue-600 group-hover:text-white">
+                →
+              </div>
+            </div>
+          </Link>
+        </section>
 
-        {/* =========================
-            OFFICIAL INFORMATION
-        ========================= */}
+        {/* OFFICIAL INFORMATION */}
         {hasOfficialInfo && (
           <section className="mt-10 rounded-xl border border-slate-200 bg-white p-6 sm:p-7">
             <div className="flex flex-col gap-4 border-b border-slate-100 pb-5 sm:flex-row sm:items-start sm:justify-between">
@@ -574,9 +493,7 @@ export default async function CoursePage({
 
               {course.syllabus_url && (
                 <a
-                  href={
-                    course.syllabus_url
-                  }
+                  href={course.syllabus_url}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="inline-flex w-fit shrink-0 items-center justify-center rounded-lg border border-blue-200 bg-blue-50 px-4 py-2.5 text-sm font-semibold text-blue-700 transition hover:border-blue-300 hover:bg-blue-100"
@@ -686,105 +603,164 @@ export default async function CoursePage({
           </section>
         )}
 
-        {/* =========================
-            COURSE INFORMATION
-        ========================= */}
+        {/* COURSE INFORMATION */}
         <div className="mt-5 grid gap-5 lg:grid-cols-2">
-          {/* 授業内容 */}
+          {/* どんな授業？ */}
           <section className="rounded-xl border border-slate-200 bg-white p-6 sm:p-7">
             <p className="text-xs font-bold tracking-widest text-blue-600">
-              ABOUT
+              COURSE OVERVIEW
             </p>
 
             <h2 className="mt-2 text-xl font-bold">
               どんな授業？
             </h2>
 
-            {course.description ? (
-              <p className="mt-5 whitespace-pre-wrap leading-7 text-slate-600">
-                {course.description}
-              </p>
-            ) : (
-              <p className="mt-5 text-slate-400">
-                授業説明はまだ登録されていません。
-              </p>
-            )}
+            <div className="mt-5">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <span className="rounded-md bg-blue-50 px-2.5 py-1 text-xs font-bold text-blue-700">
+                    公式シラバス
+                  </span>
+
+                  {course.academic_year && (
+                    <span className="text-xs text-slate-400">
+                      {course.academic_year}
+                      年度
+                    </span>
+                  )}
+                </div>
+
+                {course.syllabus_url && (
+                  <a
+                    href={
+                      course.syllabus_url
+                    }
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs font-semibold text-blue-600 transition hover:text-blue-700"
+                  >
+                    公式シラバスを見る ↗
+                  </a>
+                )}
+              </div>
+
+              {course.official_course_description ? (
+                <div className="mt-4 rounded-lg border border-blue-100 bg-blue-50/50 px-5 py-4">
+                  <p className="whitespace-pre-wrap break-words text-sm leading-7 text-slate-700">
+                    {
+                      course.official_course_description
+                    }
+                  </p>
+                </div>
+              ) : course.description ? (
+                <div className="mt-4 rounded-lg bg-slate-50 px-5 py-4">
+                  <p className="whitespace-pre-wrap break-words text-sm leading-7 text-slate-700">
+                    {course.description}
+                  </p>
+                </div>
+              ) : (
+                <div className="mt-4 rounded-lg bg-slate-50 px-5 py-5">
+                  <p className="text-sm text-slate-500">
+                    公式シラバスの授業概要はまだ取り込まれていません。
+                  </p>
+
+                  {course.syllabus_url && (
+                    <a
+                      href={
+                        course.syllabus_url
+                      }
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="mt-2 inline-flex text-sm font-semibold text-blue-600 hover:text-blue-700"
+                    >
+                      公式シラバスで確認する ↗
+                    </a>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <DescriptionNotes
+              courseId={course.id}
+            />
           </section>
 
           {/* 成績評価方法 */}
-<section className="rounded-xl border border-slate-200 bg-white p-6 sm:p-7">
-  <p className="text-xs font-bold tracking-widest text-blue-600">
-    EVALUATION
-  </p>
+          <section className="rounded-xl border border-slate-200 bg-white p-6 sm:p-7">
+            <p className="text-xs font-bold tracking-widest text-blue-600">
+              EVALUATION
+            </p>
 
-  <h2 className="mt-2 text-xl font-bold">
-    成績評価方法
-  </h2>
+            <h2 className="mt-2 text-xl font-bold">
+              成績評価方法
+            </h2>
 
-  {/* 公式シラバス */}
-  <div className="mt-5">
-    <div className="flex flex-wrap items-center justify-between gap-3">
-      <div className="flex items-center gap-2">
-        <span className="rounded-md bg-blue-50 px-2.5 py-1 text-xs font-bold text-blue-700">
-          公式シラバス
-        </span>
+            <div className="mt-5">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <span className="rounded-md bg-blue-50 px-2.5 py-1 text-xs font-bold text-blue-700">
+                    公式シラバス
+                  </span>
 
-        {course.academic_year && (
-          <span className="text-xs text-slate-400">
-            {course.academic_year}年度
-          </span>
-        )}
-      </div>
+                  {course.academic_year && (
+                    <span className="text-xs text-slate-400">
+                      {course.academic_year}
+                      年度
+                    </span>
+                  )}
+                </div>
 
-      {course.syllabus_url && (
-        <a
-          href={course.syllabus_url}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-xs font-semibold text-blue-600 transition hover:text-blue-700"
-        >
-          公式シラバスを見る ↗
-        </a>
-      )}
-    </div>
+                {course.syllabus_url && (
+                  <a
+                    href={
+                      course.syllabus_url
+                    }
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs font-semibold text-blue-600 transition hover:text-blue-700"
+                  >
+                    公式シラバスを見る ↗
+                  </a>
+                )}
+              </div>
 
-    {course.official_evaluation ? (
-      <div className="mt-4 rounded-lg border border-blue-100 bg-blue-50/50 px-5 py-4">
-        <p className="whitespace-pre-wrap break-words text-sm leading-7 text-slate-700">
-          {course.official_evaluation}
-        </p>
-      </div>
-    ) : (
-      <div className="mt-4 rounded-lg bg-slate-50 px-5 py-5">
-        <p className="text-sm text-slate-500">
-          公式シラバスの成績評価方法はまだ取り込まれていません。
-        </p>
+              {course.official_evaluation ? (
+                <div className="mt-4 rounded-lg border border-blue-100 bg-blue-50/50 px-5 py-4">
+                  <p className="whitespace-pre-wrap break-words text-sm leading-7 text-slate-700">
+                    {
+                      course.official_evaluation
+                    }
+                  </p>
+                </div>
+              ) : (
+                <div className="mt-4 rounded-lg bg-slate-50 px-5 py-5">
+                  <p className="text-sm text-slate-500">
+                    公式シラバスの成績評価方法はまだ取り込まれていません。
+                  </p>
 
-        {course.syllabus_url && (
-          <a
-            href={course.syllabus_url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="mt-2 inline-flex text-sm font-semibold text-blue-600 hover:text-blue-700"
-          >
-            公式シラバスで確認する ↗
-          </a>
-        )}
-      </div>
-    )}
-  </div>
+                  {course.syllabus_url && (
+                    <a
+                      href={
+                        course.syllabus_url
+                      }
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="mt-2 inline-flex text-sm font-semibold text-blue-600 hover:text-blue-700"
+                    >
+                      公式シラバスで確認する ↗
+                    </a>
+                  )}
+                </div>
+              )}
+            </div>
 
-  {/* 履修者による補足 */}
-  <EvaluationNotes
-    courseId={course.id}
-  />
-</section>
-
+            <EvaluationNotes
+              courseId={course.id}
+            />
+          </section>
         </div>
 
-        {/* =========================
-            GRADES
-        ========================= */}
+        {/* GRADES */}
         <section className="mt-5 rounded-xl border border-slate-200 bg-white p-6 sm:p-7">
           <div className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
             <div>
@@ -895,9 +871,7 @@ export default async function CoursePage({
           )}
         </section>
 
-        {/* =========================
-            REVIEWS
-        ========================= */}
+        {/* REVIEWS */}
         <section className="mt-14">
           <div className="flex flex-wrap items-end justify-between gap-4 border-b border-slate-200 pb-5">
             <div>
