@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { supabase } from "../../../lib/supabase";
 import ReviewList from "./ReviewList";
+import EvaluationNotes from "./EvaluationNotes";
+import DescriptionNotes from "./DescriptionNotes";
 
 type Review = {
   id: number;
@@ -14,11 +16,6 @@ type Review = {
   created_at: string;
   likes: number;
   user_id: string | null;
-};
-
-type EvaluationItem = {
-  name: string;
-  percentage: number;
 };
 
 type CoursePageProps = {
@@ -36,6 +33,7 @@ export default async function CoursePage({
   // =========================
   // 授業情報
   // =========================
+
   const {
     data: course,
     error: courseError,
@@ -51,6 +49,8 @@ export default async function CoursePage({
       credits,
       description,
       evaluation,
+      official_evaluation,
+      official_course_description,
       weekday,
       period,
       semester,
@@ -102,6 +102,7 @@ export default async function CoursePage({
   // =========================
   // 体験記
   // =========================
+
   const {
     data,
     error,
@@ -306,6 +307,73 @@ export default async function CoursePage({
       </header>
 
       <div className="mx-auto max-w-6xl px-5 py-10 sm:px-8 sm:py-14">
+
+{/* どんな授業？ */}
+<section className="rounded-xl border border-slate-200 bg-white p-6 sm:p-7">
+  <p className="text-xs font-bold tracking-widest text-blue-600">
+    COURSE OVERVIEW
+  </p>
+
+  <h2 className="mt-2 text-xl font-bold text-slate-900">
+    どんな授業？
+  </h2>
+
+  <div className="mt-5">
+    <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="flex items-center gap-2">
+        <span className="rounded-md bg-blue-50 px-2.5 py-1 text-xs font-bold text-blue-700">
+          公式シラバス
+        </span>
+
+        {course.academic_year && (
+          <span className="text-xs text-slate-400">
+            {course.academic_year}年度
+          </span>
+        )}
+      </div>
+
+      {course.syllabus_url && (
+        <a
+          href={course.syllabus_url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-xs font-semibold text-blue-600 transition hover:text-blue-700"
+        >
+          公式シラバスを見る ↗
+        </a>
+      )}
+    </div>
+
+    {course.official_course_description ? (
+      <div className="mt-4 rounded-lg border border-blue-100 bg-blue-50/50 px-5 py-4">
+        <p className="whitespace-pre-wrap break-words text-sm leading-7 text-slate-700">
+          {course.official_course_description}
+        </p>
+      </div>
+    ) : (
+      <div className="mt-4 rounded-lg bg-slate-50 px-5 py-5">
+        <p className="text-sm text-slate-500">
+          公式シラバスの授業概要はまだ取り込まれていません。
+        </p>
+
+        {course.syllabus_url && (
+          <a
+            href={course.syllabus_url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mt-2 inline-flex text-sm font-semibold text-blue-600 hover:text-blue-700"
+          >
+            公式シラバスで確認する ↗
+          </a>
+        )}
+      </div>
+    )}
+  </div>
+
+  <DescriptionNotes courseId={course.id} />
+</section>
+
+
         {/* =========================
             COURSE HEADER
         ========================= */}
@@ -451,6 +519,36 @@ export default async function CoursePage({
             </div>
           </div>
         </section>
+
+        {/* =========================
+    PAST EXAMS
+========================= */}
+<section className="mt-5">
+  <Link
+    href={`/courses/${course.id}/past-exams`}
+    className="group block rounded-xl border border-slate-200 bg-white p-6 transition hover:border-blue-300 hover:shadow-sm sm:p-7"
+  >
+    <div className="flex items-center justify-between gap-6">
+      <div>
+        <p className="text-xs font-bold tracking-widest text-blue-600">
+          PAST EXAMS
+        </p>
+
+        <h2 className="mt-2 text-xl font-bold text-slate-900">
+          過去問
+        </h2>
+
+        <p className="mt-2 text-sm leading-6 text-slate-500">
+          この授業の過去問を確認・共有できます。
+        </p>
+      </div>
+
+      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xl font-bold text-slate-700 transition group-hover:bg-blue-600 group-hover:text-white">
+        →
+      </div>
+    </div>
+  </Link>
+</section>
 
         {/* =========================
             OFFICIAL INFORMATION
@@ -613,45 +711,75 @@ export default async function CoursePage({
             )}
           </section>
 
-          {/* 評価方法 */}
-          <section className="rounded-xl border border-slate-200 bg-white p-6 sm:p-7">
-            <p className="text-xs font-bold tracking-widest text-blue-600">
-              EVALUATION
-            </p>
+          {/* 成績評価方法 */}
+<section className="rounded-xl border border-slate-200 bg-white p-6 sm:p-7">
+  <p className="text-xs font-bold tracking-widest text-blue-600">
+    EVALUATION
+  </p>
 
-            <h2 className="mt-2 text-xl font-bold">
-              評価方法
-            </h2>
+  <h2 className="mt-2 text-xl font-bold">
+    成績評価方法
+  </h2>
 
-            {evaluationItems.length >
-            0 ? (
-              <div className="mt-5">
-                {evaluationItems.map(
-                  (item, index) => (
-                    <div
-                      key={`${item.name}-${index}`}
-                      className="flex items-center justify-between border-b border-slate-100 py-3 first:pt-0 last:border-0"
-                    >
-                      <span className="text-sm text-slate-600">
-                        {item.name}
-                      </span>
+  {/* 公式シラバス */}
+  <div className="mt-5">
+    <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="flex items-center gap-2">
+        <span className="rounded-md bg-blue-50 px-2.5 py-1 text-xs font-bold text-blue-700">
+          公式シラバス
+        </span>
 
-                      <span className="font-bold">
-                        {
-                          item.percentage
-                        }
-                        %
-                      </span>
-                    </div>
-                  )
-                )}
-              </div>
-            ) : (
-              <p className="mt-5 text-slate-400">
-                評価方法はまだ登録されていません。
-              </p>
-            )}
-          </section>
+        {course.academic_year && (
+          <span className="text-xs text-slate-400">
+            {course.academic_year}年度
+          </span>
+        )}
+      </div>
+
+      {course.syllabus_url && (
+        <a
+          href={course.syllabus_url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-xs font-semibold text-blue-600 transition hover:text-blue-700"
+        >
+          公式シラバスを見る ↗
+        </a>
+      )}
+    </div>
+
+    {course.official_evaluation ? (
+      <div className="mt-4 rounded-lg border border-blue-100 bg-blue-50/50 px-5 py-4">
+        <p className="whitespace-pre-wrap break-words text-sm leading-7 text-slate-700">
+          {course.official_evaluation}
+        </p>
+      </div>
+    ) : (
+      <div className="mt-4 rounded-lg bg-slate-50 px-5 py-5">
+        <p className="text-sm text-slate-500">
+          公式シラバスの成績評価方法はまだ取り込まれていません。
+        </p>
+
+        {course.syllabus_url && (
+          <a
+            href={course.syllabus_url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mt-2 inline-flex text-sm font-semibold text-blue-600 hover:text-blue-700"
+          >
+            公式シラバスで確認する ↗
+          </a>
+        )}
+      </div>
+    )}
+  </div>
+
+  {/* 履修者による補足 */}
+  <EvaluationNotes
+    courseId={course.id}
+  />
+</section>
+
         </div>
 
         {/* =========================

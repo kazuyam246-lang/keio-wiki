@@ -38,6 +38,61 @@ type SortType =
 
 const PAGE_SIZE = 20;
 
+/*
+ * 学部
+ *
+ * label:
+ *   ユーザーに表示する名前
+ *
+ * value:
+ *   Supabase の faculty に入っている値
+ *
+ * 例:
+ * 「法学部」を選ぶ
+ * ↓
+ * p_faculty = "法/"
+ * ↓
+ * 法/法律、法/政治などをまとめて検索
+ */
+const faculties = [
+  {
+    label: "文学部",
+    value: "文/",
+  },
+  {
+    label: "経済学部",
+    value: "経/",
+  },
+  {
+    label: "法学部",
+    value: "法/",
+  },
+  {
+    label: "商学部",
+    value: "商/",
+  },
+  {
+    label: "医学部",
+    value: "医/",
+  },
+  {
+    label: "理工学部",
+    value: "理",
+  },
+  {
+    label: "総合政策・環境情報",
+    value: "総環",
+  },
+  {
+    label: "看護医療学部",
+    value: "看/",
+  },
+  {
+    label: "薬学部",
+    value: "薬/",
+  },
+];
+
 const campuses = [
   "三田",
   "日吉",
@@ -93,17 +148,23 @@ export default function CourseList() {
   const [loading, setLoading] =
     useState(true);
 
-  const [errorMessage, setErrorMessage] =
-    useState("");
+  const [
+    errorMessage,
+    setErrorMessage,
+  ] = useState("");
 
   /*
    * 検索
    */
-  const [searchInput, setSearchInput] =
-    useState("");
+  const [
+    searchInput,
+    setSearchInput,
+  ] = useState("");
 
-  const [searchText, setSearchText] =
-    useState("");
+  const [
+    searchText,
+    setSearchText,
+  ] = useState("");
 
   /*
    * 絞り込み
@@ -141,8 +202,10 @@ export default function CourseList() {
   /*
    * 並び替え
    */
-  const [sortType, setSortType] =
-    useState<SortType>("default");
+  const [
+    sortType,
+    setSortType,
+  ] = useState<SortType>("default");
 
   /*
    * ページ
@@ -382,9 +445,8 @@ export default function CourseList() {
             絞り込み
         ========================= */}
         <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {/* 学部・研究科 */}
-          <input
-            type="text"
+          {/* 学部 */}
+          <select
             value={
               selectedFaculty
             }
@@ -393,9 +455,29 @@ export default function CourseList() {
                 event.target.value
               )
             }
-            placeholder="学部・研究科"
-            className="h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 outline-none transition placeholder:text-slate-400 hover:border-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-          />
+            className={
+              selectClass
+            }
+          >
+            <option value="">
+              すべての学部
+            </option>
+
+            {faculties.map(
+              (faculty) => (
+                <option
+                  key={
+                    faculty.value
+                  }
+                  value={
+                    faculty.value
+                  }
+                >
+                  {faculty.label}
+                </option>
+              )
+            )}
+          </select>
 
           {/* キャンパス */}
           <select
@@ -645,8 +727,7 @@ export default function CourseList() {
       ========================= */}
       {!loading &&
         !errorMessage &&
-        courses.length ===
-          0 && (
+        courses.length === 0 && (
           <div className="mt-10 rounded-xl border border-slate-200 bg-white px-6 py-12 text-center">
             <p className="font-semibold text-slate-800">
               該当する授業が見つかりません
@@ -673,8 +754,7 @@ export default function CourseList() {
       ========================= */}
       {!loading &&
         !errorMessage &&
-        courses.length >
-          0 && (
+        courses.length > 0 && (
           <>
             <div className="mt-8 grid gap-4">
               {courses.map(
